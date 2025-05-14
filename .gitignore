@@ -1,0 +1,36 @@
+# Directorios locales de Terraform
+**/.terraform/*
+
+# Archivos de estado de Terraform
+*.tfstate
+*.tfstate.*
+
+# Archivos de variables que pueden contener datos sensibles
+*.tfvars
+*.tfvars.json
+
+# Archivos de configuración de la CLI de Terraform
+.terraformrc
+terraform.rc
+
+# Archivos de bloqueo de estado
+*.tfstate.lock.info
+
+# Archivos de registro de errores
+crash.log
+crash.*.log
+terraform.log
+
+# Archivos de anulación (override) locales
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Archivos de salida del plan de Terraform
+*.tfplan
+
+# Claves SSH y otros archivos sensibles
+*.pem
+*.key
+*.pub
