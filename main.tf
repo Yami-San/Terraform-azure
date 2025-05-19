@@ -1,11 +1,11 @@
 resource "azurerm_resource_group" "rg" {
-  name     = "${var.prefix}-rg"
+  name     = "freedemostore"
   location = var.location
 }
 
 # ──────────────── Compute: B1S VM ────────────────
 resource "azurerm_virtual_network" "vnet" {
-  name                = "${var.prefix}-vnet"
+  name                = "freedemo-vnet"
   address_space       = ["10.0.0.0/16"]
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
@@ -70,7 +70,18 @@ resource "azurerm_linux_virtual_machine" "vm" {
   provisioner "remote-exec" {
     inline = [
       "sudo mkdir -p /opt/scripts",
-      "sudo chown ${var.admin_username}:${var.admin_username} /opt/scripts"
+      "sudo chown ${var.admin_username}:${var.admin_username} /opt/scripts",
+      # Instala sqlcmd
+      "curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -",
+      "sudo add-apt-repository \"$(curl https://packages.microsoft.com/config/ubuntu/24.04/prod.list)\"",
+      "sudo apt-get update",
+      "sudo ACCEPT_EULA=Y apt-get install -y mssql-tools unixodbc-dev",
+      "echo 'export PATH=\"$PATH:/opt/mssql-tools/bin\"' >> /etc/profile.d/sqlcmd.sh",
+      "source /etc/profile.d/sqlcmd.sh",
+
+      # Ejecuta los scripts ya subidos
+      "sqlcmd -S ${azurerm_mssql_server.sqlsrv.fully_qualified_domain_name} -d mySqlDb -U sqladminuser -P '${var.admin_password}' -i /opt/scripts/create_tables.sql",
+      "sqlcmd -S ${azurerm_mssql_server.sqlsrv.fully_qualified_domain_name} -d mySqlDb -U sqladminuser -P '${var.admin_password}' -i /opt/scripts/seed_and_query.sql"
     ]
     connection {
       type        = "ssh"
@@ -142,58 +153,79 @@ resource "azurerm_linux_virtual_machine" "vm" {
   }
 }
 
+# --------------- Azure Blob Storage --------------
 
-# ──────────────── Storage: General Purpose v2 ────────────────
-resource "azurerm_storage_account" "sa" {
-  name                     = lower(substr("${var.prefix}sa", 0, 24))
+# Storage Account
+resource "azurerm_storage_account" "example" {
+  name                     = "${var.prefix}store"
   resource_group_name      = azurerm_resource_group.rg.name
   location                 = azurerm_resource_group.rg.location
   account_tier             = "Standard"
-  account_replication_type = "LRS"               # up to 5 GB free :contentReference[oaicite:4]{index=4}
+  account_replication_type = "LRS"
+  account_kind             = "StorageV2"
 }
 
-# ──────────────── Monitoring: Log Analytics ────────────────
-resource "azurerm_log_analytics_workspace" "law" {
-  name                = "${var.prefix}-law"
-  location            = azurerm_resource_group.rg.location
-  resource_group_name = azurerm_resource_group.rg.name
-
-  sku                 = "PerGB2018"             # ingestion charged beyond free 5 GB/month :contentReference[oaicite:5]{index=5}
-  retention_in_days   = 31                      # free retention :contentReference[oaicite:6]{index=6}
+# Storage Container
+resource "azurerm_storage_container" "jeandata" {
+  name                  = "scripts"
+  storage_account_name  = azurerm_storage_account.example.name
+  container_access_type = "private"
+  depends_on            = [azurerm_storage_account.example]
 }
 
-resource "azurerm_monitor_diagnostic_setting" "vm_diagnostics" {
-  name                       = "vm-diag"
-  target_resource_id         = azurerm_linux_virtual_machine.vm.id
-  log_analytics_workspace_id = azurerm_log_analytics_workspace.law.id
+# Storage Blob
+resource "azurerm_storage_blob" "jeandata" {
+  name                   = "archivo-de-jean.txt"
+  storage_account_name   = azurerm_storage_account.example.name
+  storage_container_name = azurerm_storage_container.jeandata.name
+  type                   = "Block"
+  source                 = "${path.module}/scripts/jean.txt"
+  
+  # Opcional pero recomendable: forzar recarga si cambia el contenido
+  content_md5            = filemd5("${path.module}/scripts/jean.txt")
+  # Opcional: especificar el tipo MIME correcto
+  content_type           = "text/plain"
+}
 
-  metric {
-    category = "AllMetrics"
-    enabled  = true
+# ───────────── Azure SQL Database ─────────────
 
-    retention_policy {
-      enabled = false
-      days    = 0
-    }
-  }
+#SQL Server
+resource "azurerm_mssql_server" "sqlsrv" {
+  name                         = "sqlserverdejeanmarcop"
+  resource_group_name          = azurerm_resource_group.rg.name
+  location                     = azurerm_resource_group.rg.location
+  version                      = "12.0"
+  administrator_login          = "sqladminuser"
+  administrator_login_password = var.admin_password
+}
+
+#SQL Database
+resource "azurerm_mssql_database" "sqldb" {
+  name                = "mySqlDb"
+  server_id = azurerm_mssql_server.sqlsrv.id
+  sku_name            = "S0"
+  max_size_gb = 2
+}
+
+# Auxiliar: sufijo único
+resource "random_id" "suffix" {
+  byte_length = 4
 }
 
 resource "azurerm_network_security_group" "nsg" {
-  name                = "vm-nsg"
+  name                = "${var.prefix}-nsg"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
-}
 
-resource "azurerm_network_security_rule" "ssh" {
-  name                        = "allow-ssh"
-  priority                    = 1001
-  direction                   = "Inbound"
-  access                      = "Allow"
-  protocol                    = "Tcp"
-  source_port_range           = "*"
-  destination_port_range      = "22"
-  source_address_prefix       = "*"
-  destination_address_prefix  = "*"
-  resource_group_name         = azurerm_resource_group.rg.name
-  network_security_group_name = azurerm_network_security_group.nsg.name
+  security_rule {
+    name                       = "AllowSSH"
+    priority                   = 1001
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "22"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
 }

@@ -1,30 +1,24 @@
--- 1) Crear la base de datos
-CREATE DATABASE IF NOT EXISTS ejemplo;
--- insertar_datos.sql
+USE mySqlDb;
+GO
 
-USE ejemplo;
+-- Insertar pilotos
+INSERT INTO dbo.Piloto (nombre)
+VALUES ('Juan Pérez'), ('María López');
+GO
 
--- Insertar datos en piloto
-INSERT INTO piloto (nombre)
-VALUES 
-  ('Juan Pérez'),
-  ('María Gómez'),
-  ('Carlos Díaz');  -- Sintaxis INSERT INTO columnas + VALUES :contentReference[oaicite:0]{index=0}
+-- Insertar aviones (asumimos piloto_id 1 y 2 existen)
+INSERT INTO dbo.Avion (piloto_id, modelo, matricula)
+VALUES (1, 'Boeing 737', 'ABC-123'),
+       (2, 'Airbus A320', 'XYZ-789');
+GO
 
--- Insertar datos en avion
-INSERT INTO avion (modelo, piloto_id)
-VALUES 
-  ('Boeing 737', 1),
-  ('Airbus A320', 2);  -- Se puede omitir columnas si se insertan todas en orden :contentReference[oaicite:1]{index=1}
+-- Insertar seguros (asumimos avion_id 1 y 2 existen)
+INSERT INTO dbo.Seguro (avion_id, poliza)
+VALUES (1, 'POL-001'), (2, 'POL-002');
+GO
 
--- Insertar datos en seguro
-INSERT INTO seguro (poliza, id_avion)
-VALUES 
-  ('POL-12345', 1),
-  ('POL-67890', 2);  -- INSERT múltiple para mejorar eficiencia :contentReference[oaicite:2]{index=2}
-
--- Visualizar contenido de las tablas
-SELECT * FROM piloto;
-SELECT * FROM avion;
-SELECT * FROM seguro;
-
+-- Consultas de verificación
+SELECT * FROM dbo.Piloto;
+SELECT * FROM dbo.Avion;
+SELECT * FROM dbo.Seguro;
+GO
